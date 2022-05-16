@@ -9,22 +9,30 @@ import com.project.imageservice.domain.Tag;
 import com.project.imageservice.dto.image.CreateImageDto;
 import com.project.imageservice.dto.image.ImageDto;
 import com.project.imageservice.dto.image.UpdateImageDto;
-import com.project.imageservice.excepttion.NoSuchEntityExistException;
+import com.project.imageservice.exception.type.AccountNotFoundException;
+import com.project.imageservice.exception.type.ImageNotFoundException;
+import com.project.imageservice.exception.type.TagNotFoundException;
 import com.project.imageservice.mapper.ImageMapper;
 import com.project.imageservice.service.ImageServiceImpl;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 public class ImageServiceTests {
 
     private static final Integer ACCOUNT_ID = 1;
@@ -49,26 +57,21 @@ public class ImageServiceTests {
     private static final Integer UPDATE_TAG_ID = 4;
     private static final String UPDATE_TAG_NAME = "someTagName2";
 
+    @Mock
     private ImageRepository imageRepository;
+    @Mock
     private AccountRepository accountRepository;
+    @Mock
     private TagRepository tagRepository;
-
+    @Spy
+    private ImageMapper imageMapper;
+    @InjectMocks
     private ImageServiceImpl imageService;
 
-    @BeforeEach
-    public void setUp() {
-        imageRepository = mock(ImageRepository.class);
-        accountRepository = mock(AccountRepository.class);
-        tagRepository = mock(TagRepository.class);
-        ImageMapper imageMapper = new ImageMapper();
-        imageService = new ImageServiceImpl(imageRepository, imageMapper, accountRepository, tagRepository);
-
-    }
-
     @Test
-    public void whenGetAllImagesByAccountIdNotFoundThenNoSuchEntityExistException() {
+    public void whenGetAllImagesByAccountIdNotFoundThenAccountNotFoundException() {
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        assertThatExceptionOfType(AccountNotFoundException.class)
                 .isThrownBy(() -> imageService.getImages(ACCOUNT_ID));
     }
 
@@ -89,7 +92,7 @@ public class ImageServiceTests {
         Account account = createAccount();
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
 
-        List<Image> imageList = getImageList();
+        List<Image> imageList = getImagesByAccount(account);
         when(imageRepository.findAllByAccountId(ACCOUNT_ID)).thenReturn(imageList);
         List<ImageDto> imageDtoList = imageService.getImages(ACCOUNT_ID);
 
@@ -102,19 +105,19 @@ public class ImageServiceTests {
     }
 
     @Test
-    public void whenGetImageByAccountIdNotFoundThenNoSuchEntityExistException() {
+    public void whenGetImageByAccountIdNotFoundThenAccountNotFoundException() {
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        assertThatExceptionOfType(AccountNotFoundException.class)
                 .isThrownBy(() -> imageService.findById(ACCOUNT_ID, IMAGE_ID));
     }
 
     @Test
-    public void whenGetImageByIdNotFountThenNoSuchEntityExistException() {
+    public void whenGetImageByIdNotFountThenImageNotFoundException() {
         Account account = createAccount();
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
 
-        when(imageRepository.findById(IMAGE_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        when(imageRepository.findByIdAndAccountId(ACCOUNT_ID, IMAGE_ID)).thenReturn(Optional.empty());
+        assertThatExceptionOfType(ImageNotFoundException.class)
                 .isThrownBy(() -> imageService.findById(ACCOUNT_ID, IMAGE_ID));
     }
 
@@ -123,7 +126,7 @@ public class ImageServiceTests {
         Account account = createAccount();
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
 
-        Image image = createImage();
+        Image image = createImage(account, List.of());
         when(imageRepository.findByIdAndAccountId(ACCOUNT_ID, IMAGE_ID)).thenReturn(Optional.of(image));
 
         ImageDto imageDto = imageService.findById(ACCOUNT_ID, IMAGE_ID);
@@ -132,24 +135,28 @@ public class ImageServiceTests {
         assertThat(imageDto.getOriginalName()).isEqualTo(IMAGE_ORIGINAL_NAME);
         assertThat(imageDto.getContentType()).isEqualTo(IMAGE_CONTENT_TYPE);
         assertThat(imageDto.getSize()).isEqualTo(IMAGE_SIZE);
+        assertThat(imageDto.getTags()).isNotNull();
+        assertThat(imageDto.getTags().size()).isEqualTo(0);
     }
 
-    // find by specification?
-
     @Test
-    public void whenCreateImageAccountIdNotFoundThenNoSuchEntityExistException() {
-        CreateImageDto createImageDto = createImageDto();
+    public void whenCreateImageAccountIdNotFoundThenAccountNotFoundException() {
+        CreateImageDto createImageDto = createImageDto(List.of());
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        assertThatExceptionOfType(AccountNotFoundException.class)
                 .isThrownBy(() -> imageService.create(createImageDto, ACCOUNT_ID));
     }
 
     @Test
-    public void whenCreateImageTagIdNotFoundThenNoSuchEntityExistException() {
-        CreateImageDto createImageDto = createImageDto();
-        List<Integer> tagIds = getTagsIds();
-        when(tagRepository.findByIdIn(tagIds)).thenReturn(null);
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+    public void whenCreateImageTagIdNotFoundThenTagNotFoundException() {
+        Account account = createAccount();
+        when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+
+        CreateImageDto createImageDto = createImageDto(List.of(TAG_ID));
+        List<Integer> tagIds = createImageDto.getTagsIds();
+
+        when(tagRepository.findByIdIn(tagIds)).thenReturn(List.of());
+        assertThatExceptionOfType(TagNotFoundException.class)
                 .isThrownBy(() -> imageService.create(createImageDto, ACCOUNT_ID));
     }
 
@@ -158,10 +165,13 @@ public class ImageServiceTests {
         Account account = createAccount();
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
 
-        List<Integer> tagIds = getTagsIds();
-        when(tagRepository.findByIdIn(tagIds)).thenReturn(getTagList());
+        List<Tag> tags = createTags();
+        List<Integer> tagIds = tags.stream()
+                .map(Tag::getId)
+                .collect(Collectors.toList());
+        when(tagRepository.findByIdIn(tagIds)).thenReturn(tags);
 
-        CreateImageDto createImageDto = createImageDto();
+        CreateImageDto createImageDto = createImageDto(tagIds);
 
         ImageDto imageDto = imageService.create(createImageDto, ACCOUNT_ID);
 
@@ -173,45 +183,52 @@ public class ImageServiceTests {
     }
 
     @Test
-    public void whenUpdateImageAccountIdNotFoundThenNoSuchEntityExistException() {
-        UpdateImageDto updateImageDto = updateImageDto();
+    public void whenUpdateImageAccountIdNotFoundThenAccountNotFoundException() {
+        UpdateImageDto updateImageDto = updateImageDto(List.of(TAG_ID));
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        assertThatExceptionOfType(AccountNotFoundException.class)
                 .isThrownBy(() -> imageService.update(ACCOUNT_ID, IMAGE_ID, updateImageDto));
     }
 
     @Test
-    public void whenUpdateImageByIdNotFoundThenNoSuchEntityExistException() {
+    public void whenUpdateImageByIdNotFoundThenImageNotFoundException() {
+        Account account = createAccount();
+        when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+        UpdateImageDto updateImageDto = updateImageDto(List.of(TAG_ID));
+        when(imageRepository.findByIdAndAccountId(ACCOUNT_ID, IMAGE_ID)).thenReturn(Optional.empty());
+        assertThatExceptionOfType(ImageNotFoundException.class)
+                .isThrownBy(() -> imageService.update(ACCOUNT_ID, IMAGE_ID, updateImageDto));
+    }
+
+    @Test
+    public void whenUpdateImageWithTagIdNotFoundThenTagNotFoundException() {
         Account account = createAccount();
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
 
-        UpdateImageDto updateImageDto = updateImageDto();
-        when(imageRepository.findById(IMAGE_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
-                .isThrownBy(() -> imageService.update(ACCOUNT_ID, IMAGE_ID, updateImageDto));
-    }
+        Image image = createImage(account, List.of());
+        when(imageRepository.findByIdAndAccountId(ACCOUNT_ID, IMAGE_ID)).thenReturn(Optional.of(image));
 
-    @Test
-    public void whenUpdateImageTagIdNotFoundThenNoSuchEntityExistException() {
-        UpdateImageDto updateImageDto = updateImageDto();
-        List<Integer> tagIds = getTagsIds();
-        when(tagRepository.findByIdIn(tagIds)).thenReturn(null);
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        UpdateImageDto updateImageDto = updateImageDto(List.of(UPDATE_TAG_ID));
+        List<Integer> tagIds = updateImageDto.getTagsIds();
+        when(tagRepository.findByIdIn(tagIds)).thenReturn(List.of());
+        assertThatExceptionOfType(TagNotFoundException.class)
                 .isThrownBy(() -> imageService.update(ACCOUNT_ID, IMAGE_ID, updateImageDto));
     }
 
     @Test
     public void whenUpdateImageThenSuccess() {
         Account account = createAccount();
+        List<Tag> tags = createTagsForUpdate();
+        List<Integer> tagsIds = tags.stream()
+                .map(Tag::getId)
+                .collect(Collectors.toList());
+        UpdateImageDto updateImageDto = updateImageDto(tagsIds);
+        Image image = createImage(account, tags);
+
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
-
-        List<Integer> tagIds = getUpdateTagsIds();
-        when(tagRepository.findByIdIn(tagIds)).thenReturn(getUpdateTagList());
-
-        Image image = createImage();
         when(imageRepository.findByIdAndAccountId(ACCOUNT_ID, IMAGE_ID)).thenReturn(Optional.of(image));
+        when(tagRepository.findByIdIn(tagsIds)).thenReturn(tags);
 
-        UpdateImageDto updateImageDto = updateImageDto();
         ImageDto imageDto = imageService.update(ACCOUNT_ID, IMAGE_ID, updateImageDto);
         assertThat(imageDto.getOriginalName()).isEqualTo(UPDATE_IMAGE_ORIGINAL_NAME);
         assertThat(imageDto.getContentType()).isEqualTo(UPDATE_IMAGE_CONTENT_TYPE);
@@ -227,7 +244,7 @@ public class ImageServiceTests {
     }
 
 
-    private Image createImage() {
+    private Image createImage(Account account, List<Tag> tags) {
         Image image = new Image();
         image.setId(IMAGE_ID);
         image.setOriginalName(IMAGE_ORIGINAL_NAME);
@@ -235,14 +252,15 @@ public class ImageServiceTests {
         image.setSize(IMAGE_SIZE);
         image.setCreatedOn(NOW);
         image.setUpdatedOn(NOW);
-        image.setAccount(createAccount());
-        image.setTags(getTagList());
+        image.setAccount(account);
+        image.setTags(tags);
         return image;
     }
 
-    private List<Image> getImageList() {
+    private List<Image> getImagesByAccount(Account account) {
+        List<Tag> tags = createTags();
         List<Image> imageList = new ArrayList<>();
-        imageList.add(createImage());
+        imageList.add(createImage(account, tags));
         return imageList;
     }
 
@@ -265,58 +283,36 @@ public class ImageServiceTests {
         return tag;
     }
 
-    private List<Tag> getTagList() {
-        List<Tag> tagList = new ArrayList<>();
-        tagList.add(createTag());
-        return tagList;
+    private List<Tag> createTags() {
+        return List.of(createTag());
     }
 
-    private List<Integer> getTagsIds() {
-        List<Tag> tagList = getTagList();
-        List<Integer> tagsIds = new ArrayList<>();
-        for (Tag tag : tagList) {
-            tagsIds.add(tag.getId());
-        }
-        return tagsIds;
-    }
-
-    private Tag createUpdateTag() {
+    private Tag createTagForUpdate() {
         Tag updateTag = new Tag();
         updateTag.setId(UPDATE_TAG_ID);
         updateTag.setTagName(UPDATE_TAG_NAME);
         return updateTag;
     }
 
-    private List<Tag> getUpdateTagList() {
-        List<Tag> tagList = new ArrayList<>();
-        tagList.add(createUpdateTag());
-        return tagList;
+    private List<Tag> createTagsForUpdate() {
+        return List.of(createTagForUpdate());
     }
 
-    private List<Integer> getUpdateTagsIds() {
-        List<Tag> tagList = getUpdateTagList();
-        List<Integer> tagsIds = new ArrayList<>();
-        for (Tag tag : tagList) {
-            tagsIds.add(tag.getId());
-        }
-        return tagsIds;
-    }
-
-    private CreateImageDto createImageDto() {
+    private CreateImageDto createImageDto(List<Integer> tagIds) {
         CreateImageDto createImageDto = new CreateImageDto();
         createImageDto.setOriginalName(IMAGE_ORIGINAL_NAME);
         createImageDto.setContentType(IMAGE_CONTENT_TYPE);
         createImageDto.setSize(IMAGE_SIZE);
-        createImageDto.setTagsIds(getTagsIds());
+        createImageDto.setTagsIds(tagIds);
         return createImageDto;
     }
 
-    private UpdateImageDto updateImageDto() {
+    private UpdateImageDto updateImageDto(List<Integer> tagIds) {
         UpdateImageDto updateImageDto = new UpdateImageDto();
         updateImageDto.setOriginalName(UPDATE_IMAGE_ORIGINAL_NAME);
         updateImageDto.setContentType(UPDATE_IMAGE_CONTENT_TYPE);
         updateImageDto.setSize(UPDATE_IMAGE_SIZE);
-        updateImageDto.setTagsIds(getUpdateTagsIds());
+        updateImageDto.setTagsIds(tagIds);
         return updateImageDto;
     }
 }

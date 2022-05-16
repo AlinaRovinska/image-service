@@ -9,7 +9,10 @@ import com.project.imageservice.domain.Tag;
 import com.project.imageservice.dto.image.CreateImageDto;
 import com.project.imageservice.dto.image.ImageDto;
 import com.project.imageservice.dto.image.UpdateImageDto;
-import com.project.imageservice.excepttion.NoSuchEntityExistException;
+import com.project.imageservice.exception.type.AccountNotFoundException;
+import com.project.imageservice.exception.type.EntityNotFoundException;
+import com.project.imageservice.exception.type.ImageNotFoundException;
+import com.project.imageservice.exception.type.TagNotFoundException;
 import com.project.imageservice.mapper.ImageMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -37,7 +40,7 @@ public class ImageServiceImpl implements ImageService {
     @Transactional(readOnly = true)
     public List<ImageDto> getImages(Integer accountId) {
         accountRepository.findById(accountId)
-                .orElseThrow(() -> new NoSuchEntityExistException("Did not find the Account id - " + accountId));
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
 
         return imageRepository.findAllByAccountId(accountId)
                 .stream()
@@ -49,18 +52,11 @@ public class ImageServiceImpl implements ImageService {
     @Transactional(readOnly = true)
     public ImageDto findById(Integer accountId, Integer imageId) {
         accountRepository.findById(accountId)
-                .orElseThrow(() -> new NoSuchEntityExistException("Did not find the Account id - " + accountId));
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
 
         return imageRepository.findByIdAndAccountId(accountId, imageId)
                 .map(a -> imageMapper.mapToDo(a))
-                .orElseThrow(
-                        () -> new NoSuchEntityExistException(
-                                String.format(
-                                        "Did not find the Image id - %s by Account id - %s",
-                                        imageId,
-                                        accountId)
-                        )
-                );
+                .orElseThrow(() -> new ImageNotFoundException(imageId, accountId));
     }
 
     @Override
@@ -82,7 +78,7 @@ public class ImageServiceImpl implements ImageService {
     ) {
 
         Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new NoSuchEntityExistException("Did not find the Account id - " + accountId));
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
 
         List<Integer> requestListTags = createImageDto.getTagsIds();
         List<Tag> tags = tagRepository.findByIdIn(createImageDto.getTagsIds());
@@ -115,20 +111,13 @@ public class ImageServiceImpl implements ImageService {
     ) {
 
         Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new NoSuchEntityExistException("Did not find the Account id - " + accountId));
+                .orElseThrow(() -> new AccountNotFoundException(accountId));
 
         Image image = imageRepository.findByIdAndAccountId(accountId, imageId)
-                .orElseThrow(
-                        () -> new NoSuchEntityExistException(String.format(
-                                "Did not find the Image id - %s by Account id - %s",
-                                imageId,
-                                accountId)
-                        )
-                );
-
+                .orElseThrow(() -> new ImageNotFoundException(imageId, accountId));
 
         List<Integer> requestListTags = updateImageDto.getTagsIds();
-        List<Tag> tags = tagRepository.findByIdIn(updateImageDto.getTagsIds());
+        List<Tag> tags = tagRepository.findByIdIn(requestListTags);
 
         validateTags(tags, requestListTags);
 
@@ -162,11 +151,14 @@ public class ImageServiceImpl implements ImageService {
             dbIds.add(tag.getId());
         }
 
-        validateIds(dbIds, requestIds);
+        Set<Integer> errorIds = validateIds(dbIds, requestIds);
+        if (!(errorIds.isEmpty())) {
+            throw new TagNotFoundException(errorIds);
+        }
 
     }
 
-    private void validateIds(Set<Integer> dbIds, List<Integer> requestIds) {
+    private Set<Integer> validateIds(Set<Integer> dbIds, List<Integer> requestIds) {
         Set<Integer> errorIds = new HashSet<>();
         for (Integer requestTagsId : requestIds) {
             if (!(dbIds.contains(requestTagsId))) {
@@ -174,8 +166,6 @@ public class ImageServiceImpl implements ImageService {
             }
         }
 
-        if (!(errorIds.isEmpty())) {
-            throw new NoSuchEntityExistException("Did not find the Tag ids - " + errorIds);
-        }
+        return errorIds;
     }
 }

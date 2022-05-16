@@ -1,4 +1,4 @@
-package com.project.imageservice.excepttion;
+package com.project.imageservice.exception;
 
 public class ErrorResponse {
 

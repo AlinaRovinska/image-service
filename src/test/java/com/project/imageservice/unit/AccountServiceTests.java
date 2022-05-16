@@ -8,12 +8,18 @@ import com.project.imageservice.domain.enums.RoleNames;
 import com.project.imageservice.dto.account.AccountDto;
 import com.project.imageservice.dto.account.CreateAccountDto;
 import com.project.imageservice.dto.account.UpdateAccountDto;
-import com.project.imageservice.excepttion.AccountWithUsernameExistException;
-import com.project.imageservice.excepttion.NoSuchEntityExistException;
+import com.project.imageservice.exception.type.AccountAlreadyExistException;
+import com.project.imageservice.exception.type.AccountNotFoundException;
+import com.project.imageservice.exception.type.EntityNotFoundException;
+import com.project.imageservice.exception.type.RoleNotFoundException;
 import com.project.imageservice.mapper.AccountMapper;
 import com.project.imageservice.service.AccountServiceImpl;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.Spy;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.time.LocalDateTime;
@@ -25,6 +31,7 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatExceptionOfType;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 public class AccountServiceTests {
 
     private static final Integer ACCOUNT_ID = 1;
@@ -40,20 +47,16 @@ public class AccountServiceTests {
     private static final String UPDATE_ACCOUNT_ACCOUNT_NAME = "someAccountName2";
     private static final String UPDATE_ACCOUNT_EMAIL = "someEmail2";
 
+    @Mock
     private AccountRepository accountRepository;
+    @Mock
     private RoleRepository roleRepository;
+    @Mock
     private BCryptPasswordEncoder encoder;
-
+    @Spy
+    private AccountMapper accountMapper;
+    @InjectMocks
     private AccountServiceImpl accountService;
-
-    @BeforeEach
-    public void setup() {
-        accountRepository = mock(AccountRepository.class);
-        roleRepository = mock(RoleRepository.class);
-        encoder = mock(BCryptPasswordEncoder.class);
-        AccountMapper accountMapper = new AccountMapper();
-        accountService = new AccountServiceImpl(accountRepository, accountMapper, encoder, roleRepository);
-    }
 
     @Test
     public void whenGetAllAccountsShouldReturnListOfAllAccounts() {
@@ -78,9 +81,9 @@ public class AccountServiceTests {
     }
 
     @Test
-    public void whenAccountByIdNotFoundThenNoSuchEntityExistException() {
+    public void whenAccountByIdNotFoundThenAccountNotFoundException() {
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        assertThatExceptionOfType(AccountNotFoundException.class)
                 .isThrownBy(() -> accountService.findById(ACCOUNT_ID));
     }
 
@@ -96,25 +99,23 @@ public class AccountServiceTests {
     }
 
     @Test
-    public void whenCreateAccountWithUserNameThatExistThenAccountWithUserNameExistException() {
+    public void whenCreateAccountWithUserNameThatExistThenAccountAlreadyExistException() {
         when(accountRepository.findByUserName(ACCOUNT_USERNAME)).thenReturn(Optional.of(new Account()));
         CreateAccountDto createAccountDto = createAccountDto();
 
-        assertThatExceptionOfType(AccountWithUsernameExistException.class)
+        assertThatExceptionOfType(AccountAlreadyExistException.class)
                 .isThrownBy(() -> accountService.create(createAccountDto));
     }
 
     @Test
-    public void whenCreateAccountWithRoleNoFoundThenNoSuchEntityExistException() {
+    public void whenCreateAccountWithRoleNoFoundThenRoleNotFoundException() {
         when(accountRepository.findByUserName(ACCOUNT_USERNAME)).thenReturn(Optional.empty());
         when(roleRepository.findByRole(RoleNames.USER)).thenReturn(Optional.empty());
 
         CreateAccountDto createAccountDto = createAccountDto();
 
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        assertThatExceptionOfType(RoleNotFoundException.class)
                 .isThrownBy(() -> accountService.create(createAccountDto));
-
-
     }
 
     @Test
@@ -136,9 +137,9 @@ public class AccountServiceTests {
     }
 
     @Test
-    public void whenUpdateAccountWithAccountIdNotExistThenNoSuchEntityException() {
+    public void whenUpdateAccountWithAccountIdNotExistThenAccountNotFoundException() {
         when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
-        assertThatExceptionOfType(NoSuchEntityExistException.class)
+        assertThatExceptionOfType(AccountNotFoundException.class)
                 .isThrownBy(() -> accountService.findById(ACCOUNT_ID));
     }
 
